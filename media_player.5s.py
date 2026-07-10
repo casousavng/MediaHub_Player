@@ -41,14 +41,14 @@ IDLE_TITLE = "Em Espera (Sem faixa ativa)"
 STATIONS = [
     # Category: Nacionais e Populares
     {"name": "Rádio Comercial", "url": "https://stream-hls.bauermedia.pt/comercial.aac/playlist.m3u8", "category": "Nacionais"},
-    {"name": "Rádio RFM", "url": "https://21313.live.streamtheworld.com/RFMAAC", "category": "Nacionais"},
+    {"name": "Rádio RFM", "url": "https://playerservices.streamtheworld.com/api/livestream-redirect/RFMAAC.aac", "category": "Nacionais"},
     {"name": "Rádio M80", "url": "https://stream-hls.bauermedia.pt/m80.aac/playlist.m3u8", "category": "Nacionais"},
-    {"name": "Rádio Renascença", "url": "https://25643.live.streamtheworld.com/RADIO_RENASCENCAAAC", "category": "Nacionais"},
+    {"name": "Rádio Renascença", "url": "https://playerservices.streamtheworld.com/api/livestream-redirect/RADIO_RENASCENCAAAC.aac", "category": "Nacionais"},
     {"name": "Rádio TSF", "url": "http://tsfdirecto.tsf.pt/tsfdirecto.mp3", "category": "Nacionais"},
-    {"name": "Rádio Mega Hits", "url": "https://21313.live.streamtheworld.com/MEGA_HITSAAC", "category": "Nacionais"},
+    {"name": "Rádio Mega Hits", "url": "https://playerservices.streamtheworld.com/api/livestream-redirect/MEGA_HITSAAC.aac", "category": "Nacionais"},
     {"name": "Rádio Cidade FM", "url": "https://stream-hls.bauermedia.pt/cidade.aac/playlist.m3u8", "category": "Nacionais"},
     {"name": "Rádio Observador", "url": "https://playerservices.streamtheworld.com/api/livestream-redirect/OBSERVADOR_ADP.m3u8", "category": "Nacionais"},
-    {"name": "Batida FM", "url": "https://stream-hls.bauermedia.pt/batida.aac/playlist.m3u8", "category": "Nacionais"},
+    {"name": "Batida FM", "url": "https://stream-hls.bauermedia.pt/batidafm.aac/playlist.m3u8", "category": "Nacionais"},
 
     # Category: Públicas (RTP)
     {"name": "Antena 1", "url": "https://streaming-live.rtp.pt/liveradio/antena180a/playlist.m3u8", "category": "RTP"},
@@ -66,14 +66,13 @@ STATIONS = [
     {"name": "Rádio Oxigénio", "url": "https://proic1.evspt.com/oxigenio_aac", "category": "Música"},
     {"name": "Rádio MEO Music", "url": "http://centova.radio.com.pt:8495/;", "category": "Música"},
     {"name": "Rádio Amália", "url": "http://link.radios.pt/amalia?1487014253471.mp3", "category": "Música"},
-    {"name": "Rádio SBSR", "url": "https://centova.radios.pt/proxy/435?mp=/stream", "category": "Música"},
-    {"name": "RFM Oitentas", "url": "https://22533.live.streamtheworld.com/GR80SRFMAAC", "category": "Música"},
-    {"name": "RFM Oceano Pacífico", "url": "https://25533.live.streamtheworld.com/OCEANPACIFICAAC", "category": "Música"},
-    {"name": "RFM Dance", "url": "https://25453.live.streamtheworld.com/DANCEONTHEFLOORAAC.aac", "category": "Música"},
-    {"name": "RFM Jazzy", "url": "https://27753.live.streamtheworld.com/RFM_JAZZYAAC.aac", "category": "Música"},
+    {"name": "RFM Oitentas", "url": "https://playerservices.streamtheworld.com/api/livestream-redirect/GR80SRFMAAC.aac", "category": "Música"},
+    {"name": "RFM Oceano Pacífico", "url": "https://playerservices.streamtheworld.com/api/livestream-redirect/OCEANPACIFICAAC.aac", "category": "Música"},
+    {"name": "RFM Dance", "url": "https://playerservices.streamtheworld.com/api/livestream-redirect/DANCEONTHEFLOORAAC.aac", "category": "Música"},
+    {"name": "RFM Jazzy", "url": "https://playerservices.streamtheworld.com/api/livestream-redirect/RFM_JAZZYAAC.aac", "category": "Música"},
     {"name": "M80 80s", "url": "https://stream-hls.bauermedia.pt/m8080.aac/playlist.m3u8", "category": "Música"},
     {"name": "M80 Dance", "url": "https://stream-hls.bauermedia.pt/m80dance.aac/playlist.m3u8", "category": "Música"},
-    {"name": "Comercial Rock", "url": "https://media1.mcr.iol.pt/wrcomercial/rcrock.stream/playlist.m3u8", "category": "Música"},
+    {"name": "Comercial Rock", "url": "https://stream-hls.bauermedia.pt/rcrock.aac/playlist.m3u8", "category": "Música"},
     {"name": "Comercial Dance", "url": "https://stream-hls.bauermedia.pt/rcdance.aac/playlist.m3u8", "category": "Música"},
 
     # Category: Locais e Universitárias
