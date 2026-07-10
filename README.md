@@ -88,3 +88,37 @@ Não precisas de instalar bibliotecas adicionais de Python (`pip`), pois o scrip
    ```bash
    python3 media_player.5s.py
    ```
+
+---
+
+## 📊 Relatório de Consumos do Media Hub
+
+### 1. 🧠 Memória RAM (Muito Baixo)
+
+Motor do Player (Processo mpv): ~34.7 MB (Resident Set Size).
+Nota: Graças à otimização no script que limita o buffer (--demuxer-max-bytes=5M), o consumo de memória RAM do leitor de áudio em background mantém-se estável à volta dos 30-35MB, mesmo a ouvir transmissões longas.
+Script de Integração (media_player.5s.py): 0 MB em repouso. O SwiftBar executa o script a cada 5 segundos, este corre em cerca de ~40-50ms para atualizar o menu e termina imediatamente a sua execução, libertando toda a RAM.
+
+### 2. ⚡ Processamento / CPU (Baixo)
+A tocar Áudio (Rádio/YouTube): ~8% de uma única thread de CPU (num Mac com Apple Silicon).
+Em Espera (Sem faixa ativa): 0.0% CPU. Quando o áudio é parado, o mpv entra em modo idle e não consome recursos de processamento.
+
+### 3. 🌐 Tráfego de Rede / Internet
+Como o player apenas descarrega a faixa de áudio e descarta o vídeo (graças ao argumento --no-video), o consumo é mínimo:
+
+Streaming de Rádio Portuguesa: A maior parte das rádios transmite em AAC a 128 kbps ou 192 kbps.
+~16 KB/s (a 128 kbps) ➔ Aprox. 57.6 MB por hora de reprodução.
+~24 KB/s (a 192 kbps) ➔ Aprox. 86.4 MB por hora de reprodução.
+
+Músicas do YouTube: É feito o stream do áudio M4A/OPUS otimizado (geralmente a 128-160 kbps).
+~16 KB/s a 20 KB/s ➔ Aprox. 60 a 72 MB por hora.
+Em Espera (Sem faixa ativa): 0 KB/s. Zero tráfego de rede.
+
+🔌 Conexão Ativa no Momento
+Ao analisar as ligações de rede do processo ativo do leitor (PID 14899), este está ligado a:
+
+Servidor: proic1.redeaudio.com:https (Porta 443 - SSL seguro)
+Protocolo: TCP (Estabelecido)
+TIP
+
+### Esta aplicação é extremamente leve e eficiente se comparada com abrir uma aba no browser (Chrome/Safari) para ouvir rádio ou YouTube, que facilmente consome entre 300 MB a 1 GB de RAM e até 15-20% de CPU devido ao processamento visual e anúncios.
