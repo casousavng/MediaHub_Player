@@ -1,0 +1,7 @@
+# Media Hub Python Dependencies
+# 
+# O script do Media Hub utiliza apenas módulos da biblioteca padrão do Python.
+# Por isso, não são necessários pacotes adicionais via pip.
+#
+# As dependências externas do sistema (mpv, yt-dlp e SwiftBar) devem ser
+# instaladas utilizando o Homebrew (ver README.md para instruções detalhadas).
