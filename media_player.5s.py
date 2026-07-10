@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 #
 # <swiftbar.title>Media Hub (Rádio & YouTube)</swiftbar.title>
-# <swiftbar.version>1.0</swiftbar.version>
+# <swiftbar.version>1.0.0</swiftbar.version>
 # <swiftbar.author>Antigravity</swiftbar.author>
 # <swiftbar.desc>Leitor Unificado de Rádio e YouTube em Background (mpv IPC)</swiftbar.desc>
 # <swiftbar.hideAbout>true</swiftbar.hideAbout>
@@ -724,6 +724,11 @@ def start_mpv():
         "--audio-pitch-correction=no",
     ]
     
+    state = load_state()
+    normalize_audio = state.get("normalize_audio", True)
+    if normalize_audio:
+        cmd.append("--af=dynaudnorm")
+        
     subprocess.Popen(
         cmd,
         stdout=subprocess.DEVNULL,
@@ -825,6 +830,23 @@ def add_youtube_url(url):
     friendly_title = get_cached_title(url) or url
     show_notification("Fila / Playlist YT", f"Adicionado: {friendly_title}")
     return res.get("error") == "success"
+
+def toggle_normalize_command():
+    state = load_state()
+    current = state.get("normalize_audio", True)
+    new_state = not current
+    state["normalize_audio"] = new_state
+    save_state(state)
+    
+    if is_mpv_running():
+        if new_state:
+            send_mpv_command(["set_property", "af", "dynaudnorm"])
+        else:
+            send_mpv_command(["set_property", "af", ""])
+            
+    status_str = "Ativada" if new_state else "Desativada"
+    show_notification("Normalização de Áudio", f"A normalização foi {status_str.lower()}.")
+    return True
 
 def pause_command():
     res = send_mpv_command(["set_property", "pause", True])
@@ -1025,7 +1047,9 @@ def get_player_status():
             "media_title": "",
             "volume": 100.0,
             "codec": "",
-            "bitrate": 0
+            "bitrate": 0,
+            "samplerate": 0,
+            "channels": 0
         }
         
     pause_res = send_mpv_command(["get_property", "pause"])
@@ -1037,6 +1061,7 @@ def get_player_status():
     vol_res = send_mpv_command(["get_property", "volume"])
     codec_res = send_mpv_command(["get_property", "audio-codec"])
     bitrate_res = send_mpv_command(["get_property", "audio-bitrate"])
+    audio_params_res = send_mpv_command(["get_property", "audio-params"])
     
     is_paused = pause_res.get("data", False) if pause_res.get("error") == "success" else False
     is_muted = mute_res.get("data", False) if mute_res.get("error") == "success" else False
@@ -1046,6 +1071,13 @@ def get_player_status():
     vol = vol if vol is not None else 100.0
     codec = codec_res.get("data", "") if codec_res.get("error") == "success" else ""
     bitrate = bitrate_res.get("data", 0) if bitrate_res.get("error") == "success" else 0
+    
+    audio_params = audio_params_res.get("data") if audio_params_res.get("error") == "success" else None
+    samplerate = 0
+    channels = 0
+    if audio_params and isinstance(audio_params, dict):
+        samplerate = audio_params.get("samplerate", 0)
+        channels = audio_params.get("channels", "") or audio_params.get("channel-count", 0)
     if media_title:
         is_youtube = False
         if current_path and ("youtube.com" in current_path or "youtu.be" in current_path):
@@ -1125,7 +1157,9 @@ def get_player_status():
         "media_title": media_title,
         "volume": vol,
         "codec": codec,
-        "bitrate": bitrate
+        "bitrate": bitrate,
+        "samplerate": samplerate,
+        "channels": channels
     }
 
 # Dialog Handlers
@@ -1584,9 +1618,7 @@ def draw_tui(current_tab, input_buffer="", input_prompt_type=""):
             else:
                 lines.append(f"{CLR_CYN}│{CLR_RST}                                                              {CLR_CYN}│{CLR_RST}")
         else:
-            track = status["title"]
-            if len(track) > 50:
-                track = track[:47] + "..."
+            track = "Youtube Playing"
             lines.append(f"{CLR_CYN}│{CLR_RST}  Música: {CLR_WHT}{track:<50}{CLR_RST} {CLR_CYN}│{CLR_RST}")
             
             time_pos = status["time_pos"]
@@ -2077,7 +2109,7 @@ def run_swiftbar():
     if not mpv_ok:
         print("🎧 Media Hub (mpv em falta) | color=red")
         print("---")
-        print(f"Instalar mpv e yt-dlp via Homebrew | bash={script_path} param1=install-deps terminal=true refresh=true color=black")
+        print(f"Instalar mpv e yt-dlp via Homebrew | bash={script_path} param1=install-deps terminal=true refresh=true ")
         return
 
     status = get_player_status()
@@ -2098,14 +2130,12 @@ def run_swiftbar():
         if status["mode"] == "radio":
             name_to_display = status["station_name"]
         else:
-            name_to_display = status["title"]
-            if name_to_display == IDLE_TITLE:
-                name_to_display = "YouTube"
+            name_to_display = "Youtube Playing"
                 
         if len(name_to_display) > 25:
             name_to_display = name_to_display[:22] + "..."
             
-        color = "#FFEB3B" if status["paused"] else ("#00E676" if status["mode"] == "radio" else "#29B6F6")
+        color = "#FFEB3B" if status["paused"] else "#00E676"
         print(f"{icon}{mode_prefix} {name_to_display} | color={color}")
         
     print("---")
@@ -2114,31 +2144,51 @@ def run_swiftbar():
     if status["status"] != "stopped":
         codec = status.get("codec")
         bitrate = status.get("bitrate")
+        samplerate = status.get("samplerate")
+        channels = status.get("channels")
+        
         details = []
         if codec:
-            details.append(codec.upper())
+            codec_upper = codec.upper()
+            if codec_upper.startswith("PCM_"):
+                codec_upper = "PCM"
+            details.append(codec_upper)
         if bitrate and bitrate > 0:
             details.append(f"{int(bitrate / 1000)} kbps")
+        if samplerate and samplerate > 0:
+            details.append(f"{samplerate / 1000:.1f} kHz" if samplerate >= 1000 else f"{samplerate} Hz")
+        if channels:
+            if isinstance(channels, int):
+                if channels == 2:
+                    details.append("Stereo")
+                elif channels == 1:
+                    details.append("Mono")
+                else:
+                    details.append(f"{channels}ch")
+            else:
+                details.append(str(channels).capitalize())
         details_str = f" ({' | '.join(details)})" if details else ""
 
         mute_label = "🔊 Desativar Mudo" if status["muted"] else "🔇 Ativar Mudo"
         print(f"{mute_label} | bash={script_path} param1=mute terminal=false refresh=true shortcut=ctrl+option+m color=#E53935")
 
         vol = status.get("volume", 100.0)
-        print(f"🔊 Volume: {int(vol)}% | color=black")
-        print(f"--🔊 Aumentar Volume (+10%) | bash={script_path} param1=volume-up terminal=false refresh=true shortcut=ctrl+option+up color=black")
-        print(f"--🔉 Diminuir Volume (-10%) | bash={script_path} param1=volume-down terminal=false refresh=true shortcut=ctrl+option+down color=black")
+        print(f"🔊 Volume: {int(vol)}% ")
+        print(f"--🔊 Aumentar Volume (+10%) | bash={script_path} param1=volume-up terminal=false refresh=true shortcut=ctrl+option+up ")
+        print(f"--🔉 Diminuir Volume (-10%) | bash={script_path} param1=volume-down terminal=false refresh=true shortcut=ctrl+option+down ")
         
         print("---")
         
         if status["mode"] == "radio":
-            print(f"📻 Estação: {status['station_name']} | size=13 color=black style=bold")
+            print(f"📻 Estação: {status['station_name']} | size=13  style=bold")
             if status["media_title"]:
                 disp_title = status["media_title"].replace('|', '∣')
-                print(f"🎵 A tocar: {disp_title}{details_str} | size=12 color=#555555")
+                print(f"🎵 A tocar: {disp_title} | size=12 color=#555555")
+            if details:
+                print(f"ℹ️ Info: {' | '.join(details)} | color=#555555 size=11")
         else:
             disp_title = status["title"].replace('|', '∣')
-            print(f"🎵 Faixa: {disp_title}{details_str} | size=13 color=black style=bold")
+            print(f"🎵 Faixa: {disp_title} | size=13  style=bold")
             if status["duration"] > 0:
                 time_pos = status["time_pos"]
                 duration = status["duration"]
@@ -2150,62 +2200,64 @@ def run_swiftbar():
                 filled = int(percent / 100.0 * bar_width)
                 bar = "█" * filled + "░" * (bar_width - filled)
                 print(f"⏱️ {time_str} / {duration_str} [{bar}] ({percent:.1f}%) | color=#37474F font=Monaco size=11")
+            if details:
+                print(f"ℹ️ Info: {' | '.join(details)} | color=#555555 size=11")
                 
         print("---")
         
         play_pause_label = "⏸️ Pausar Áudio" if not status["paused"] else "▶️ Retomar Áudio"
-        print(f"{play_pause_label} | bash={script_path} param1=toggle terminal=false refresh=true shortcut=ctrl+option+space color=black")
+        print(f"{play_pause_label} | bash={script_path} param1=toggle terminal=false refresh=true shortcut=ctrl+option+space ")
         
         if status["mode"] == "youtube":
             playlist_res = send_mpv_command(["get_property", "playlist"])
             playlist = playlist_res.get("data", []) if playlist_res.get("error") == "success" else []
             if len(playlist) > 1:
-                print(f"⏭ Próxima Faixa | bash={script_path} param1=next terminal=false refresh=true shortcut=ctrl+option+right color=black")
-                print(f"⏮ Faixa Anterior | bash={script_path} param1=prev terminal=false refresh=true shortcut=ctrl+option+left color=black")
+                print(f"⏭ Próxima Faixa | bash={script_path} param1=next terminal=false refresh=true shortcut=ctrl+option+right ")
+                print(f"⏮ Faixa Anterior | bash={script_path} param1=prev terminal=false refresh=true shortcut=ctrl+option+left ")
                 
-        print(f"⏹ Parar Player (Sair) | bash={script_path} param1=stop terminal=false refresh=true shortcut=ctrl+option+s color=#E53935")
+        print(f"⏹️ Parar Player (Sair) | bash={script_path} param1=stop terminal=false refresh=true shortcut=ctrl+option+s color=#E53935")
         
         current_path = status["path"]
         if current_path:
             favorites = load_favorites()
             is_fav = any(item.get("url") == current_path for item in favorites)
             if is_fav:
-                print(f"⭐ Remover das Favoritas | bash={script_path} param1=remove-favorite param2='{current_path}' terminal=false refresh=true color=black")
+                print(f"⭐ Remover das Favoritas | bash={script_path} param1=remove-favorite param2='{current_path}' terminal=false refresh=true ")
             else:
-                print(f"⭐ Adicionar às Favoritas | bash={script_path} param1=add-favorite terminal=false refresh=true color=black")
+                print(f"⭐ Adicionar às Favoritas | bash={script_path} param1=add-favorite terminal=false refresh=true ")
     else:
         state = load_state()
         mode = state.get("mode")
         if mode == "radio":
             last_url = state.get("last_radio_url")
             last_name = state.get("last_radio_name", "Última Rádio")
-            print(f"▶️ Sintonizar {last_name} | bash={script_path} param1=play param2='{last_url}' param3='{last_name}' param4=radio terminal=false refresh=true color=black")
+            print(f"▶️ Sintonizar {last_name} | bash={script_path} param1=play param2='{last_url}' param3='{last_name}' param4=radio terminal=false refresh=true ")
         elif mode == "youtube":
             yt_urls = state.get("yt_urls", [])
             if yt_urls:
-                print(f"▶️ Retomar Playback YouTube | bash={script_path} param1=resume terminal=false refresh=true color=black")
+                print(f"▶️ Retomar Playback YouTube | bash={script_path} param1=resume terminal=false refresh=true ")
             else:
-                print("▶️ Iniciar Player | bash={script_path} param1=resume terminal=false refresh=true color=black")
+                print("▶️ Iniciar Player | bash={script_path} param1=resume terminal=false refresh=true ")
         else:
-            print("▶️ Iniciar Player | bash={script_path} param1=resume terminal=false refresh=true color=black")
+            print("▶️ Iniciar Player | bash={script_path} param1=resume terminal=false refresh=true ")
             
     # 3. Section: Radio Module
     print("---")
-    print("📻 RÁDIOS DE PORTUGAL | color=black style=bold")
+    print("📻 RÁDIOS DE PORTUGAL | style=bold")
     
     favorites = load_favorites()
     radio_favs = [f for f in favorites if f.get("type") == "radio"]
-    print("⭐ Rádios Favoritas | color=black")
+    print("⭐ Rádios Favoritas ")
     if radio_favs:
         for item in radio_favs:
             f_url = item.get("url")
             f_name = item.get("title", f_url)
             f_name_escaped = f_name.replace('|', '∣')
             bullet = "👉 " if status["path"] == f_url and status["status"] != "stopped" and status["mode"] == "radio" else "📻 "
-            print(f"--{bullet}{f_name_escaped} | bash={script_path} param1=play param2='{f_url}' param3='{f_name}' param4=radio terminal=false refresh=true color=black")
-            print(f"--{bullet}🗑️ Remover Favorita | bash={script_path} param1=remove-favorite param2='{f_url}' terminal=false refresh=true alternate=true color=black")
+            print(f"--{bullet}{f_name_escaped} | bash={script_path} param1=play param2='{f_url}' param3='{f_name}' param4=radio terminal=false refresh=true ")
+            print(f"--{bullet}🗑️ Remover Favorita | bash={script_path} param1=remove-favorite param2='{f_url}' terminal=false refresh=true alternate=true ")
     else:
-        print("--🚫 Nenhuma favorita adicionada | color=black")
+        print("--🚫 Nenhuma favorita adicionada ")
         
     categories = ["Nacionais", "RTP", "Música", "Locais"]
     cat_names = {
@@ -2216,50 +2268,50 @@ def run_swiftbar():
     }
     
     for cat in categories:
-        print(f"{cat_names[cat]} | color=black")
+        print(f"{cat_names[cat]} ")
         for s in STATIONS:
             if s["category"] == cat:
                 bullet = "👉 " if status["path"] == s["url"] and status["status"] != "stopped" and status["mode"] == "radio" else "📻 "
-                print(f"--{bullet}{s['name']} | bash={script_path} param1=play param2='{s['url']}' param3={repr(s['name'])} param4=radio terminal=false refresh=true color=black")
+                print(f"--{bullet}{s['name']} | bash={script_path} param1=play param2='{s['url']}' param3={repr(s['name'])} param4=radio terminal=false refresh=true ")
                 
     customs = get_custom_stations()
-    print("👤 Rádios Personalizadas | color=black")
+    print("👤 Rádios Personalizadas ")
     if customs:
         for c in customs:
             c_url = c["url"]
             c_name = c["name"]
             bullet = "👉 " if status["path"] == c_url and status["status"] != "stopped" and status["mode"] == "radio" else "📻 "
-            print(f"--{bullet}{c_name} | bash={script_path} param1=play param2='{c_url}' param3={repr(c_name)} param4=radio terminal=false refresh=true color=black")
-            print(f"--{bullet}🗑️ Remover Personalizada | bash={script_path} param1=remove-custom param2='{c_url}' terminal=false refresh=true alternate=true color=black")
+            print(f"--{bullet}{c_name} | bash={script_path} param1=play param2='{c_url}' param3={repr(c_name)} param4=radio terminal=false refresh=true ")
+            print(f"--{bullet}🗑️ Remover Personalizada | bash={script_path} param1=remove-custom param2='{c_url}' terminal=false refresh=true alternate=true ")
         print("-- ---")
     else:
-        print("--🚫 Nenhuma rádio personalizada | color=black")
+        print("--🚫 Nenhuma rádio personalizada ")
         print("-- ---")
-    print(f"--📋 Adicionar do Clipboard | bash={script_path} param1=add-radio-clipboard terminal=false refresh=true color=black")
-    print(f"--✍️ Adicionar Manualmente... | bash={script_path} param1=add-radio-gui terminal=false refresh=true color=black")
+    print(f"--📋 Adicionar do Clipboard | bash={script_path} param1=add-radio-clipboard terminal=false refresh=true ")
+    print(f"--✍️ Adicionar Manualmente... | bash={script_path} param1=add-radio-gui terminal=false refresh=true ")
         
     history = load_history()
     radio_history = [h for h in history if h.get("type") == "radio"]
-    print("📜 Histórico Rádios | color=black")
+    print("📜 Histórico Rádios ")
     if radio_history:
         for item in radio_history[:8]:
             h_url = item.get("url")
             h_name = item.get("title", h_url)
             h_name_escaped = h_name.replace('|', '∣')
-            print(f"--📻 {h_name_escaped} | bash={script_path} param1=play param2='{h_url}' param3={repr(h_name)} param4=radio terminal=false refresh=true color=black")
+            print(f"--📻 {h_name_escaped} | bash={script_path} param1=play param2='{h_url}' param3={repr(h_name)} param4=radio terminal=false refresh=true ")
         print("-- ---")
-        print(f"--🧹 Limpar Histórico Rádios | bash={script_path} param1=clear-history param2=radio terminal=false refresh=true color=black")
+        print(f"--🧹 Limpar Histórico Rádios | bash={script_path} param1=clear-history param2=radio terminal=false refresh=true ")
     else:
-        print("--🚫 Histórico vazio | color=black")
+        print("--🚫 Histórico vazio ")
 
     # 4. Section: YouTube Module
     print("---")
-    print("🎥 YOUTUBE AUDIO PLAYER | color=black style=bold")
+    print("🎥 YOUTUBE AUDIO PLAYER | style=bold")
     
     yt_favs = [f for f in favorites if f.get("type") == "youtube"]
-    print("⭐ Músicas Favoritas | color=black")
+    print("⭐ Músicas Favoritas ")
     if yt_favs:
-        print(f"--▶️ Tocar Todos os Favoritos ({len(yt_favs)}) | bash={script_path} param1=play-favorites terminal=false refresh=true color=black")
+        print(f"--▶️ Tocar Todos os Favoritos ({len(yt_favs)}) | bash={script_path} param1=play-favorites terminal=false refresh=true ")
         print("-- ---")
         for item in yt_favs:
             f_url = item.get("url")
@@ -2267,16 +2319,16 @@ def run_swiftbar():
             if len(f_title) > 40:
                 f_title = f_title[:37] + "..."
             bullet = "👉 " if status["path"] == f_url and status["status"] != "stopped" and status["mode"] == "youtube" else "🎵 "
-            print(f"--{bullet}{f_title} | bash={script_path} param1=play param2='{f_url}' param3=None param4=youtube terminal=false refresh=true color=black")
-            print(f"--{bullet}🗑️ Remover Favorita | bash={script_path} param1=remove-favorite param2='{f_url}' terminal=false refresh=true alternate=true color=black")
+            print(f"--{bullet}{f_title} | bash={script_path} param1=play param2='{f_url}' param3=None param4=youtube terminal=false refresh=true ")
+            print(f"--{bullet}🗑️ Remover Favorita | bash={script_path} param1=remove-favorite param2='{f_url}' terminal=false refresh=true alternate=true ")
     else:
-        print("--🚫 Nenhuma favorita adicionada | color=black")
+        print("--🚫 Nenhuma favorita adicionada ")
         
     playlist_res = send_mpv_command(["get_property", "playlist"])
     playlist = playlist_res.get("data", []) if playlist_res.get("error") == "success" else []
-    print("⏳ Fila de Reprodução (Queue) | color=black")
+    print("⏳ Fila de Reprodução (Queue) ")
     if playlist and status["mode"] == "youtube":
-        print(f"--🧹 Limpar Fila ({len(playlist)}) | bash={script_path} param1=clear terminal=false refresh=true color=black")
+        print(f"--🧹 Limpar Fila ({len(playlist)}) | bash={script_path} param1=clear terminal=false refresh=true ")
         print("-- ---")
         for i, item in enumerate(playlist):
             filename = item.get("filename")
@@ -2296,59 +2348,63 @@ def run_swiftbar():
                 t_escaped = t_escaped[:32] + "..."
                 
             bullet = "👉 " if item.get("current") else "🎵 "
-            print(f"--{bullet}{t_escaped} | bash={script_path} param1=select-track param2={i} terminal=false refresh=true color=black")
+            print(f"--{bullet}{t_escaped} | bash={script_path} param1=select-track param2={i} terminal=false refresh=true ")
         print("-- ---")
     else:
-        print("--🚫 Fila vazia | color=black")
-    print(f"--🔍 Pesquisar Música... | bash={script_path} param1=search-youtube-video terminal=false refresh=true color=black")
-    print(f"--🔍 Pesquisar Playlist... | bash={script_path} param1=search-youtube-playlist terminal=false refresh=true color=black")
-    print(f"--📋 Adicionar do Clipboard | bash={script_path} param1=add-youtube-clipboard terminal=false refresh=true color=black")
-    print(f"--✍️ Adicionar Manualmente... | bash={script_path} param1=add-youtube-gui terminal=false refresh=true color=black")
+        print("--🚫 Fila vazia ")
+    print(f"--🔍 Pesquisar Música... | bash={script_path} param1=search-youtube-video terminal=false refresh=true ")
+    print(f"--🔍 Pesquisar Playlist... | bash={script_path} param1=search-youtube-playlist terminal=false refresh=true ")
+    print(f"--📋 Adicionar do Clipboard | bash={script_path} param1=add-youtube-clipboard terminal=false refresh=true ")
+    print(f"--✍️ Adicionar Manualmente... | bash={script_path} param1=add-youtube-gui terminal=false refresh=true ")
         
     yt_history = [h for h in history if h.get("type") == "youtube"]
-    print("📜 Histórico YouTube | color=black")
+    print("📜 Histórico YouTube ")
     if yt_history:
         yt_playlists = [h for h in yt_history if "list=" in h["url"] or "playlist" in h["url"]]
         yt_songs = [h for h in yt_history if not ("list=" in h["url"] or "playlist" in h["url"])]
         
         if yt_playlists:
-            print("--📁 Playlists Recentes: | color=black")
+            print("--📁 Playlists Recentes: ")
             for item in yt_playlists[:8]:
                 h_url = item.get("url")
                 h_title = item.get("title", h_url).replace('|', '∣')
                 if len(h_title) > 35:
                     h_title = h_title[:32] + "..."
-                print(f"--   📁 {h_title} | bash={script_path} param1=play param2='{h_url}' param3=None param4=youtube terminal=false refresh=true color=black")
-                print(f"--   🗑️ Remover Item | bash={script_path} param1=remove-history-item param2='{h_url}' terminal=false refresh=true alternate=true color=black")
+                print(f"--   📁 {h_title} | bash={script_path} param1=play param2='{h_url}' param3=None param4=youtube terminal=false refresh=true ")
+                print(f"--   🗑️ Remover Item | bash={script_path} param1=remove-history-item param2='{h_url}' terminal=false refresh=true alternate=true ")
                 
         if yt_playlists and yt_songs:
             print("-----")
             
         if yt_songs:
-            print("--🎵 Músicas Recentes: | color=black")
+            print("--🎵 Músicas Recentes: ")
             for item in yt_songs[:12]:
                 h_url = item.get("url")
                 h_title = item.get("title", h_url).replace('|', '∣')
                 if len(h_title) > 35:
                     h_title = h_title[:32] + "..."
-                print(f"--   🎵 {h_title} | bash={script_path} param1=play param2='{h_url}' param3=None param4=youtube terminal=false refresh=true color=black")
-                print(f"--   🗑️ Remover Item | bash={script_path} param1=remove-history-item param2='{h_url}' terminal=false refresh=true alternate=true color=black")
+                print(f"--   🎵 {h_title} | bash={script_path} param1=play param2='{h_url}' param3=None param4=youtube terminal=false refresh=true ")
+                print(f"--   🗑️ Remover Item | bash={script_path} param1=remove-history-item param2='{h_url}' terminal=false refresh=true alternate=true ")
                 
         print("-----")
-        print(f"--🧹 Limpar Histórico Músicas | bash={script_path} param1=clear-history param2=songs terminal=false refresh=true color=black")
-        print(f"--🧹 Limpar Histórico Playlists | bash={script_path} param1=clear-history param2=playlists terminal=false refresh=true color=black")
-        print(f"--🧹 Limpar Todo o Histórico YouTube | bash={script_path} param1=clear-history param2=youtube terminal=false refresh=true color=black")
+        print(f"--🧹 Limpar Histórico Músicas | bash={script_path} param1=clear-history param2=songs terminal=false refresh=true ")
+        print(f"--🧹 Limpar Histórico Playlists | bash={script_path} param1=clear-history param2=playlists terminal=false refresh=true ")
+        print(f"--🧹 Limpar Todo o Histórico YouTube | bash={script_path} param1=clear-history param2=youtube terminal=false refresh=true ")
     else:
-        print("--🚫 Histórico vazio | color=black")
+        print("--🚫 Histórico vazio ")
 
     # 5. Section: General Settings & Actions
     print("---")
-    print("⚙️ DEFINIÇÕES & GERAL | color=black style=bold")
+    print("⚙️ DEFINIÇÕES & GERAL | style=bold")
     
     state = load_state()
     search_limit = state.get("search_limit", 5)
-    print(f"🔍 Limite de Pesquisa: {search_limit} resultados | color=black")
-    print(f"--✍️ Alterar Limite... | bash={script_path} param1=change-search-limit terminal=false refresh=true color=black")
+    print(f"🔍 Limite de Pesquisa: {search_limit} resultados ")
+    print(f"--✍️ Alterar Limite... | bash={script_path} param1=change-search-limit terminal=false refresh=true ")
+    
+    normalize_audio = state.get("normalize_audio", True)
+    norm_status = "Ativada" if normalize_audio else "Desativada"
+    print(f"🔊 Normalização de Volume: {norm_status} | bash={script_path} param1=toggle-normalize terminal=false refresh=true")
     
     if is_mpv_running():
         dev_res = send_mpv_command(["get_property", "audio-device-list"])
@@ -2384,25 +2440,28 @@ def run_swiftbar():
                     current_desc = d.get("description", "Automático")
                     break
                     
-            print(f"🔈 Saída: {current_desc} | color=black")
+            print(f"🔈 Saída: {current_desc} ")
             for d in unique_devices:
                 name = d.get("name")
                 desc = d.get("description", name)
                 bullet = "✓ " if name == current_dev else "🔈 "
                 desc_escaped = desc.replace('|', '∣')
-                print(f"--{bullet}{desc_escaped} | bash={script_path} param1=set-audio-device param2='{name}' terminal=false refresh=true color=black")
+                print(f"--{bullet}{desc_escaped} | bash={script_path} param1=set-audio-device param2='{name}' terminal=false refresh=true ")
         else:
-            print("🔈 Saída de Áudio | color=black")
-            print("--⚠️ Erro ao obter dispositivos | color=black")
+            print("🔈 Saída de Áudio ")
+            print("--⚠️ Erro ao obter dispositivos ")
     else:
-        print("🔈 Saída de Áudio | color=black")
-        print("--⚠️ Iniciar Player para ver dispositivos | color=black")
+        print("🔈 Saída de Áudio ")
+        print("--⚠️ Iniciar Player para ver dispositivos ")
         
     print("---")
-    print(f"🛠️ Abrir Dashboard TUI Interativo | bash=open param1=-a param2=Terminal.app param3={script_path} terminal=false color=black")
+    print(f"🛠️ Abrir Dashboard TUI Interativo | bash=open param1=-a param2=Terminal.app param3={script_path} terminal=false ")
     
     if not ytdl_ok:
         print(f"📥 Instalar Dependências (yt-dlp/mpv) | bash={script_path} param1=install-deps terminal=true refresh=true color=#E53935")
+        
+    print("---")
+    print("🏷️ Versão: 1.0.0 | color=#999999 size=11")
 
 def main():
     if len(sys.argv) > 1:
@@ -2460,6 +2519,8 @@ def main():
             search_youtube_gui("playlist")
         elif cmd == "change-search-limit":
             change_search_limit_gui()
+        elif cmd == "toggle-normalize":
+            toggle_normalize_command()
         elif cmd == "select-track":
             if len(sys.argv) > 2:
                 select_track(sys.argv[2])
