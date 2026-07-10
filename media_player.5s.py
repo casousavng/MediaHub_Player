@@ -1325,6 +1325,11 @@ def search_youtube_gui(search_type):
         show_notification("Erro", str(e))
         return
 
+    # Check if the query is actually a URL, and if so, add it directly
+    if query.startswith(("http://", "https://", "www.")):
+        add_youtube_url(query)
+        return
+
     show_notification("Pesquisa YouTube", f"A procurar '{query}'...")
 
     if search_type == "video":
@@ -1333,6 +1338,8 @@ def search_youtube_gui(search_type):
             "--flat-playlist",
             "--dump-json",
             "--skip-download",
+            "--no-warnings",
+            "--ignore-errors",
             "--playlist-end", str(search_limit),
             f"ytsearch{search_limit}:{query}"
         ]
@@ -1345,12 +1352,14 @@ def search_youtube_gui(search_type):
             "--flat-playlist",
             "--dump-json",
             "--skip-download",
+            "--no-warnings",
+            "--ignore-errors",
             "--playlist-end", str(search_limit),
             search_url
         ]
 
     try:
-        proc_search = subprocess.run(cmd, capture_output=True, text=True)
+        proc_search = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
         results = []
         for line in proc_search.stdout.splitlines():
             if not line.strip():
@@ -1365,18 +1374,29 @@ def search_youtube_gui(search_type):
                     results.append((title_val, url_val))
             except Exception:
                 pass
+    except subprocess.TimeoutExpired:
+        show_notification("Pesquisa Expirou", "A pesquisa demorou demasiado tempo. Verifique a sua ligação.")
+        return
     except Exception as e:
         show_notification("Erro de Pesquisa", str(e))
         return
 
     if not results:
-        show_notification("Pesquisa YouTube", "Nenhum resultado encontrado.")
+        err_msg = proc_search.stderr.strip() if 'proc_search' in locals() else ""
+        if err_msg:
+            lines = [l.strip() for l in err_msg.splitlines() if l.strip()]
+            first_err = lines[0] if lines else err_msg
+            if first_err.startswith("ERROR:"):
+                first_err = first_err[6:].strip()
+            show_notification("Pesquisa Sem Resultados", f"Erro: {first_err[:80]}")
+        else:
+            show_notification("Pesquisa YouTube", "Nenhum resultado encontrado.")
         return
 
     list_items = []
     url_map = {}
     for idx, (t, u) in enumerate(results, 1):
-        clean_t = t.replace('"', '\\"').replace("'", "\\'")
+        clean_t = t.replace('\\', '\\\\').replace('"', '\\"')
         if len(clean_t) > 75:
             clean_t = clean_t[:72] + "..."
         display_str = f"{idx}. {clean_t}"
