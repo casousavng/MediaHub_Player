@@ -4,6 +4,10 @@
 
 O **Media Hub** junta o melhor de dois mundos: uma barra de menus do macOS interativa e discreta com o **SwiftBar**, e um painel de controlo completo em tempo real diretamente no teu Terminal (**TUI Dashboard**).
 
+<p align="center">
+  <img src="preview.png" alt="Media Hub SwiftBar Preview" width="400">
+</p>
+
 ---
 
 ## ✨ Características Principais
